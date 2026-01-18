@@ -47,9 +47,8 @@ const Settings: React.FC<SettingsProps> = ({ userRole, info, onUpdateInfo, onBac
         if (isAIStudio && (window as any).aistudio?.hasSelectedApiKey) {
           const selected = await (window as any).aistudio.hasSelectedApiKey();
           setHasKey(selected);
-        } else if (process.env.API_KEY && process.env.API_KEY !== 'nhap_ma_api_key_cua_ban_tai_day') {
-          // Kiểm tra xem Key đã được cấu hình qua Env Var chưa
-          setHasKey(true);
+        } else if (import.meta.env.VITE_API_KEY && import.meta.env.VITE_API_KEY !== 'nhap_ma_api_key_cua_ban_tai_day') {
+           setHasKey(true);
         }
       } catch (e) {
         console.error("Lỗi kiểm tra API Key:", e);

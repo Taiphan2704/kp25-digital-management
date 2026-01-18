@@ -9,15 +9,18 @@ export class GeminiService {
    */
   async chat(message: string) {
     try {
-      const apiKey = process.env.API_KEY;
+      const apiKey = import.meta.env.VITE_API_KEY;
       if (!apiKey) {
         return "Lỗi: Chưa cấu hình API Key cho hệ thống.";
       }
       
       const ai = new GoogleGenAI({ apiKey });
       const response = await ai.models.generateContent({
-        model: 'gemini-3-flash-preview',
-        contents: message,
+        model: 'gemini-2.5-flash',
+        contents: {
+           role: 'user',
+           parts: [{ text: message }]
+        } as any,
         config: {
           systemInstruction: `Bạn là Trợ lý AI thông minh của Khu phố 25, phường Long Trường, TP. Thủ Đức.
           
