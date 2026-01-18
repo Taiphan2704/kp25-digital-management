@@ -1,0 +1,8 @@
+{
+  "name": "Khu phố 25 Digital Management",
+  "description": "Hệ thống quản lý thông minh toàn diện cho Khu phố 25, Long Trường, TP. Thủ Đức. Tích hợp quản lý dân cư, an ninh, phản ánh và hỗ trợ AI.",
+  "requestFramePermissions": [
+    "camera",
+    "microphone"
+  ]
+}
