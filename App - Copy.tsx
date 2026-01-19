@@ -11,30 +11,17 @@ import NotificationsView from './views/NotificationsView';
 import SettingsView from './views/Settings';
 import UserManagement from './views/UserManagement';
 import Chatbot from './components/Chatbot';
-import { Search, Bell, History, Menu, AlertCircle } from 'lucide-react';
-// Import Hook kết nối Firebase
-import { useFirestore } from './hooks/useFirestore';
+import { Search, Bell, History, AlertCircle, Menu } from 'lucide-react'; // Đã thêm Menu icon
 
 const App: React.FC = () => {
-  // --- 1. State quản lý giao diện (UI State) ---
   const [currentUser, setCurrentUser] = useState<User | null>(null);
   const [activeTab, setActiveTab] = useState('dashboard');
   const [loginError, setLoginError] = useState('');
   const [loginForm, setLoginForm] = useState({ username: '', password: '' });
+  
+  // State mới để điều khiển menu mobile
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
-
-  // --- 2. Kết nối Database (Thay thế localStorage) ---
-  // Tự động tải dữ liệu từ Firebase, nếu chưa có thì nạp dữ liệu mẫu (MOCK_...)
-  const { data: residents, add: addResident, update: updateResident, remove: removeResident } = useFirestore<Resident>('kp25_residents', MOCK_RESIDENTS);
-  const { data: households, add: addHousehold, update: updateHousehold, remove: removeHousehold } = useFirestore<Household>('kp25_households', MOCK_HOUSEHOLDS);
-  const { data: petitions, add: addPetition, update: updatePetition, remove: removePetition } = useFirestore<Petition>('kp25_petitions', MOCK_PETITIONS);
-  const { data: notifications, add: addNotification, remove: removeNotification } = useFirestore<Notification>('kp25_notifications', MOCK_NOTIFICATIONS);
-  const { data: securityEvents, add: addSecurity, update: updateSecurity, remove: removeSecurity } = useFirestore<SecurityEvent>('kp25_security', MOCK_SECURITY);
-  const { data: cameras, update: updateCamera } = useFirestore<Camera>('kp25_cameras', MOCK_CAMERAS);
-  const { data: users, add: addUser, update: updateUser, remove: removeUser } = useFirestore<User>('kp25_users', INITIAL_USERS);
-  const { data: logs, add: addLogDB } = useFirestore<AuditLog>('kp25_logs', MOCK_LOGS);
-
-  // --- 3. Xử lý thông tin khu phố (Vẫn giữ localStorage vì là cấu hình tĩnh) ---
+  
   const loadData = <T,>(key: string, defaultValue: T): T => {
     try {
       const saved = localStorage.getItem(key);
@@ -43,91 +30,87 @@ const App: React.FC = () => {
       return defaultValue;
     }
   };
+
   const [neighborhoodInfo, setNeighborhoodInfo] = useState<NeighborhoodInfo>(() => loadData('kp25_info', INITIAL_NEIGHBORHOOD_INFO));
+  const [users, setUsers] = useState<User[]>(() => loadData('kp25_users', INITIAL_USERS));
+  const [residents, setResidents] = useState<Resident[]>(() => loadData('kp25_residents', MOCK_RESIDENTS));
+  const [households, setHouseholds] = useState<Household[]>(() => loadData('kp25_households', MOCK_HOUSEHOLDS));
+  const [petitions, setPetitions] = useState<Petition[]>(() => loadData('kp25_petitions', MOCK_PETITIONS));
+  const [notifications, setNotifications] = useState<Notification[]>(() => loadData('kp25_notifications', MOCK_NOTIFICATIONS));
+  const [securityEvents, setSecurityEvents] = useState<SecurityEvent[]>(() => loadData('kp25_security', MOCK_SECURITY));
+  const [cameras, setCameras] = useState<Camera[]>(() => loadData('kp25_cameras', MOCK_CAMERAS));
+  const [logs, setLogs] = useState<AuditLog[]>(() => loadData('kp25_logs', MOCK_LOGS));
 
   useEffect(() => {
     localStorage.setItem('kp25_info', JSON.stringify(neighborhoodInfo));
-  }, [neighborhoodInfo]);
+    localStorage.setItem('kp25_users', JSON.stringify(users));
+    localStorage.setItem('kp25_residents', JSON.stringify(residents));
+    localStorage.setItem('kp25_households', JSON.stringify(households));
+    localStorage.setItem('kp25_petitions', JSON.stringify(petitions));
+    localStorage.setItem('kp25_notifications', JSON.stringify(notifications));
+    localStorage.setItem('kp25_security', JSON.stringify(securityEvents));
+    localStorage.setItem('kp25_cameras', JSON.stringify(cameras));
+    localStorage.setItem('kp25_logs', JSON.stringify(logs));
+  }, [neighborhoodInfo, users, residents, households, petitions, notifications, securityEvents, cameras, logs]);
 
-  // Giữ phiên đăng nhập
   useEffect(() => {
     const savedSession = localStorage.getItem('kp25_session');
     if (savedSession) setCurrentUser(JSON.parse(savedSession));
   }, []);
 
-  // --- 4. Các hàm xử lý Logic (Business Logic) ---
-  
-  // Hàm ghi nhật ký hệ thống (Lưu thẳng lên Firebase)
   const addLog = (action: string, details: string) => {
     const activeUser = currentUser || JSON.parse(localStorage.getItem('kp25_session') || '{}');
     if (!activeUser.id) return;
-    
-    addLogDB({
+    const newLog: AuditLog = {
+      id: `l-${Date.now()}`,
       userId: activeUser.id,
       userName: activeUser.fullName,
       action,
       timestamp: new Date().toLocaleString('vi-VN'),
       details
-    } as any);
+    };
+    setLogs(prev => [newLog, ...prev]);
   };
 
-  // Logic Thêm dân cư: Tự động tăng số thành viên trong hộ
   const handleAddResident = (r: Omit<Resident, 'id'>) => {
-    addResident(r as any);
-    
-    // Tìm và cập nhật hộ khẩu tương ứng
-    const household = households.find(h => h.id === r.householdId);
-    if (household) {
-       updateHousehold({ ...household, memberCount: (household.memberCount || 0) + 1 });
-    }
-    
+    const newId = `res-${Date.now()}`;
+    const newResident = { ...r, id: newId };
+    setResidents(prev => [newResident, ...prev]);
+    setHouseholds(prev => prev.map(h => 
+      h.id === r.householdId ? { ...h, memberCount: (h.memberCount || 0) + 1 } : h
+    ));
     addLog('Thêm dân cư', `Thêm mới nhân khẩu ${r.fullName} vào hộ ${r.householdId}`);
   };
 
-  // Logic Cập nhật dân cư: Xử lý khi chuyển hộ khẩu
   const handleUpdateResident = (updated: Resident) => {
     const old = residents.find(r => r.id === updated.id);
-    updateResident(updated);
-    
+    setResidents(prev => prev.map(r => r.id === updated.id ? updated : r));
     if (old && old.householdId !== updated.householdId) {
-      // Giảm hộ cũ
-      const oldHousehold = households.find(h => h.id === old.householdId);
-      if (oldHousehold) {
-        updateHousehold({ ...oldHousehold, memberCount: Math.max(0, (oldHousehold.memberCount || 1) - 1) });
-      }
-      // Tăng hộ mới
-      const newHousehold = households.find(h => h.id === updated.householdId);
-      if (newHousehold) {
-        updateHousehold({ ...newHousehold, memberCount: (newHousehold.memberCount || 0) + 1 });
-      }
-      
+      setHouseholds(prev => prev.map(h => {
+        if (h.id === old.householdId) return { ...h, memberCount: Math.max(0, (h.memberCount || 1) - 1) };
+        if (h.id === updated.householdId) return { ...h, memberCount: (h.memberCount || 0) + 1 };
+        return h;
+      }));
       addLog('Cập nhật dân cư', `Chuyển nhân khẩu ${updated.fullName} từ hộ ${old.householdId} sang ${updated.householdId}`);
     } else {
       addLog('Cập nhật dân cư', `Cập nhật thông tin nhân khẩu ${updated.fullName}`);
     }
   };
 
-  // Logic Xóa dân cư: Giảm số thành viên trong hộ
   const handleDeleteResident = (id: string) => {
     const resident = residents.find(r => r.id === id);
     if (resident) {
-      removeResident(id);
-      
-      const household = households.find(h => h.id === resident.householdId);
-      if (household) {
-        updateHousehold({ ...household, memberCount: Math.max(0, (household.memberCount || 1) - 1) });
-      }
-      
+      setResidents(prev => prev.filter(r => r.id !== id));
+      setHouseholds(prev => prev.map(h => 
+        h.id === resident.householdId ? { ...h, memberCount: Math.max(0, (h.memberCount || 1) - 1) } : h
+      ));
       addLog('Xóa dân cư', `Xóa nhân khẩu ${resident.fullName} khỏi hệ thống`);
     }
   };
 
-  // Xử lý Đăng nhập (Kiểm tra với dữ liệu Firebase)
   const handleLoginSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    // Tìm user trong danh sách tải về từ Firebase
     const foundUser = users.find(u => u.username === loginForm.username && (u.password === loginForm.password || u.password === '123'));
-    
     if (foundUser) {
       setCurrentUser(foundUser);
       localStorage.setItem('kp25_session', JSON.stringify(foundUser));
@@ -137,164 +120,49 @@ const App: React.FC = () => {
     }
   };
 
-  // --- 5. Render Giao diện chính ---
   const renderView = () => {
     if (!currentUser) return null;
     const nName = neighborhoodInfo.name;
     const nWardCity = `${neighborhoodInfo.ward} • ${neighborhoodInfo.city}`;
 
     switch (activeTab) {
-      case 'dashboard': 
-        return <Dashboard residents={residents} households={households} petitions={petitions} neighborhoodName={nName} />;
-      
-      case 'residents': 
-        return <Residents 
-          userRole={currentUser.role} 
-          residents={residents} 
-          households={households} 
-          onAdd={handleAddResident} 
-          onUpdate={handleUpdateResident} 
-          onDelete={handleDeleteResident} 
-          neighborhoodName={nName} 
-        />;
-      
-      case 'households': 
-        return <Households 
-          userRole={currentUser.role} 
-          households={households} 
-          residents={residents} 
-          onAdd={(h) => {
-             // Logic thêm hộ mới: ID tự sinh hoặc nhập tay tùy form, ở đây giả lập form nhập ID
-             // Vì Household interface yêu cầu ID, nhưng hook addDoc tự sinh ID. 
-             // Ta sẽ dùng ID form nhập vào lưu vào field 'id' (ghi đè) hoặc để Firebase tự sinh
-             addHousehold(h as any);
-             addLog('Thêm hộ', `Thêm hộ gia đình mới: ${h.headName}`);
-          }} 
-          onUpdate={(h) => {
-            updateHousehold(h);
-            addLog('Cập nhật hộ', `Cập nhật hộ ${h.id}`);
-          }} 
-          onDelete={(id) => {
-            removeHousehold(id);
-            addLog('Xóa hộ gia đình', `Xóa hộ khẩu mã ${id}`);
-          }} 
-          neighborhoodName={nName} 
-        />;
-      
-      case 'security': 
-        return <Security 
-          userRole={currentUser.role} 
-          events={securityEvents} 
-          cameras={cameras} 
-          neighborhoodInfo={neighborhoodInfo} 
-          onAdd={(e) => {
-            addSecurity(e as any);
-            addLog('An ninh', `Thêm bản tin an ninh: ${e.title}`);
-          }} 
-          onUpdate={updateSecurity} 
-          onDelete={removeSecurity} 
-          onUpdateCamera={updateCamera} 
-          neighborhoodName={nName} 
-        />;
-      
-      case 'petitions': 
-        return <Petitions 
-          userRole={currentUser.role} 
-          petitions={petitions} 
-          onAdd={(p) => {
-             addPetition({
-               ...p, 
-               status: 'Chờ xử lý', 
-               createdAt: new Date().toISOString().split('T')[0]
-             } as any);
-             addLog('Phản ánh', `Gửi phản ánh mới: ${p.title}`);
-          }} 
-          onUpdate={(p) => {
-            updatePetition(p);
-            addLog('Xử lý phản ánh', `Cập nhật trạng thái phản ánh ${p.id}`);
-          }} 
-          onDelete={removePetition} 
-          neighborhoodName={nName} 
-        />;
-      
-      case 'notifications': 
-        return <NotificationsView 
-          userRole={currentUser.role} 
-          notices={notifications} 
-          onAdd={(n) => {
-            addNotification({
-              ...n, 
-              date: new Date().toISOString().split('T')[0], 
-              author: currentUser.fullName
-            } as any);
-            addLog('Thông báo', `Đăng thông báo mới: ${n.title}`);
-          }} 
-          onDelete={removeNotification} 
-          neighborhoodName={nName} 
-          wardCity={nWardCity} 
-        />;
-      
-      case 'user-management': 
-        return <UserManagement 
-          currentUser={currentUser} 
-          users={users} 
-          onAddUser={(u) => {
-            addUser(u as any);
-            addLog('Quản trị', `Thêm người dùng mới: ${u.username}`);
-          }} 
-          onUpdateUser={(u) => {
-            updateUser(u);
-            addLog('Quản trị', `Cập nhật người dùng: ${u.username}`);
-          }} 
-          onDeleteUser={(id) => {
-            removeUser(id);
-            addLog('Quản trị', `Xóa người dùng ID: ${id}`);
-          }} 
-        />;
-      
-      case 'settings': 
-        return <SettingsView 
-          userRole={currentUser.role} 
-          info={neighborhoodInfo} 
-          onUpdateInfo={(newInfo) => {
-            setNeighborhoodInfo(newInfo);
-            addLog('Cài đặt', 'Cập nhật thông tin khu phố');
-          }} 
-          onBackup={() => {
-             // Tính năng backup JSON (Client side)
-             console.log("Backup requested");
-          }} 
-        />;
-      
-      case 'logs': 
-        return (
-          <div className="bg-white rounded-2xl p-6 shadow-sm border border-slate-100 h-full overflow-hidden flex flex-col">
-            <div className="flex items-center justify-between mb-6 shrink-0">
-              <h3 className="text-xl font-bold text-slate-800">Nhật ký Hệ thống - {nName}</h3>
-              <History size={20} className="text-slate-400" />
-            </div>
-            <div className="space-y-3 overflow-y-auto pr-2">
-              {logs.map(log => (
-                <div key={log.id} className="p-4 bg-slate-50 rounded-xl flex items-start gap-4 text-sm border border-slate-100">
-                  <div className="min-w-[140px] text-slate-400 font-mono text-[11px] mt-1">{log.timestamp}</div>
-                  <div className="flex-1">
-                    <div className="flex items-center gap-2 mb-1">
-                      <span className="font-bold text-red-800">{log.userName}</span>
-                      <span className="px-1.5 py-0.5 bg-slate-200 rounded text-[10px] uppercase font-bold text-slate-600">{log.action}</span>
-                    </div>
-                    <p className="text-slate-600 leading-relaxed">{log.details}</p>
-                  </div>
-                </div>
-              ))}
-            </div>
+      case 'dashboard': return <Dashboard residents={residents} households={households} petitions={petitions} neighborhoodName={nName} />;
+      case 'residents': return <Residents userRole={currentUser.role} residents={residents} households={households} onAdd={handleAddResident} onUpdate={handleUpdateResident} onDelete={handleDeleteResident} neighborhoodName={nName} />;
+      case 'households': return <Households userRole={currentUser.role} households={households} residents={residents} onAdd={h => setHouseholds(prev => [{...h, id: `HD-${(prev.length+1).toString().padStart(4,'0')}`, memberCount: 0, lastUpdate: new Date().toISOString().split('T')[0]}, ...prev])} onUpdate={u => setHouseholds(prev => prev.map(h => h.id === u.id ? u : h))} onDelete={id => {
+        setHouseholds(prev => prev.filter(h => h.id !== id));
+        addLog('Xóa hộ gia đình', `Xóa hộ khẩu mã ${id}`);
+      }} neighborhoodName={nName} />;
+      case 'security': return <Security userRole={currentUser.role} events={securityEvents} cameras={cameras} neighborhoodInfo={neighborhoodInfo} onAdd={e => setSecurityEvents(prev => [{...e, id: `s-${Date.now()}`}, ...prev])} onUpdate={u => setSecurityEvents(prev => prev.map(e => e.id === u.id ? u : e))} onDelete={id => setSecurityEvents(prev => prev.filter(e => e.id !== id))} onUpdateCamera={c => setCameras(prev => prev.map(cam => cam.id === c.id ? c : cam))} neighborhoodName={nName} />;
+      case 'petitions': return <Petitions userRole={currentUser.role} petitions={petitions} onAdd={p => setPetitions(prev => [{...p, id: `p-${Date.now()}`, createdAt: new Date().toISOString().split('T')[0], status: 'Chờ xử lý'}, ...prev])} onUpdate={u => setPetitions(prev => prev.map(p => p.id === u.id ? u : p))} onDelete={id => setPetitions(prev => prev.filter(p => p.id !== id))} neighborhoodName={nName} />;
+      case 'notifications': return <NotificationsView userRole={currentUser.role} notices={notifications} onAdd={n => setNotifications(prev => [{...n, id: `n-${Date.now()}`, date: new Date().toISOString().split('T')[0], author: currentUser.fullName}, ...prev])} onDelete={id => setNotifications(prev => prev.filter(n => n.id !== id))} neighborhoodName={nName} wardCity={nWardCity} />;
+      case 'user-management': return <UserManagement currentUser={currentUser} users={users} onAddUser={u => setUsers(prev => [{...u, id: `u-${Date.now()}`}, ...prev])} onUpdateUser={u => setUsers(prev => prev.map(user => user.id === u.id ? u : user))} onDeleteUser={id => setUsers(prev => prev.filter(u => u.id !== id))} />;
+      case 'settings': return <SettingsView userRole={currentUser.role} info={neighborhoodInfo} onUpdateInfo={setNeighborhoodInfo} onBackup={() => {}} />;
+      case 'logs': return (
+        <div className="bg-white rounded-2xl p-6 shadow-sm border border-slate-100 h-full overflow-hidden flex flex-col">
+          <div className="flex items-center justify-between mb-6 shrink-0">
+            <h3 className="text-xl font-bold text-slate-800">Nhật ký Hệ thống - {nName}</h3>
+            <History size={20} className="text-slate-400" />
           </div>
-        );
-        
+          <div className="space-y-3 overflow-y-auto pr-2">
+            {logs.map(log => (
+              <div key={log.id} className="p-4 bg-slate-50 rounded-xl flex items-start gap-4 text-sm border border-slate-100">
+                <div className="min-w-[140px] text-slate-400 font-mono text-[11px] mt-1">{log.timestamp}</div>
+                <div className="flex-1">
+                  <div className="flex items-center gap-2 mb-1">
+                    <span className="font-bold text-red-800">{log.userName}</span>
+                    <span className="px-1.5 py-0.5 bg-slate-200 rounded text-[10px] uppercase font-bold text-slate-600">{log.action}</span>
+                  </div>
+                  <p className="text-slate-600 leading-relaxed">{log.details}</p>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      );
       default: return <Dashboard residents={residents} households={households} petitions={petitions} neighborhoodName={nName} />;
     }
   };
 
-  // --- 6. Màn hình Đăng nhập ---
   if (!currentUser) {
     return (
       <div className="min-h-screen bg-slate-900 flex items-center justify-center p-6 bg-[url('https://picsum.photos/1920/1080?grayscale&blur=10')] bg-cover relative">
@@ -326,7 +194,6 @@ const App: React.FC = () => {
     );
   }
 
-  // --- 7. Màn hình Chính (Main Layout) ---
   return (
     <div className="min-h-screen flex bg-slate-50">
       <Sidebar 
@@ -335,13 +202,16 @@ const App: React.FC = () => {
         userRole={currentUser.role} 
         onLogout={() => {setCurrentUser(null); localStorage.removeItem('kp25_session');}} 
         neighborhoodName={neighborhoodInfo.name}
+        // Truyền props điều khiển menu
         isOpen={isMobileMenuOpen}
         onClose={() => setIsMobileMenuOpen(false)}
       />
       
+      {/* Sửa className: ml-0 trên mobile, ml-64 trên desktop (md:ml-64) */}
       <main className="flex-1 ml-0 md:ml-64 p-4 md:p-8 overflow-y-auto h-screen transition-all duration-300">
         <header className="flex items-center justify-between mb-8 bg-white/50 backdrop-blur-md p-4 rounded-2xl border border-white sticky top-0 z-40 shadow-sm">
           <div className="flex items-center gap-4 flex-1 max-w-xl">
+             {/* Nút Hamburger cho Mobile */}
              <button 
                onClick={() => setIsMobileMenuOpen(true)}
                className="md:hidden p-2 text-slate-600 hover:bg-slate-100 rounded-xl"
